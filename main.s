@@ -1,3 +1,5 @@
+global COROUTINE_SIZE
+
 STACK_SIZE equ 16 * 1024
 
 CODEP	equ	0
@@ -8,7 +10,13 @@ COROUTINE_SIZE equ 12
 
 section .data
     msg db 'hello ', 10, 0
+    msg2 db 'DEBUG! ', 10, 0
     print_decimal db '%d ', 10, 0
+
+    ; Structure for the scheduler
+scheduler_coroutine:	dd	scheduler_func
+Flags3:	dd	0
+scheduler_sp:	dd	scheduler_stack+STACK_SIZE
 
 section .bss
     align 16
@@ -27,12 +35,15 @@ section .bss
     printer_stack resb STACK_SIZE
     scheduler_stack resb STACK_SIZE
 
+
     
 section .text
 
 align 16
     global main
-
+    global end_co
+    global start_coroutine
+    global resume
 
     extern printf
     extern malloc
@@ -50,25 +61,34 @@ main:
 
     call init_drone_coroutines
 
-    mov ebx, [drone_coroutines]
+    mov ebx, scheduler_coroutine
+    call co_init
     call start_coroutine
+    ; mov ebx, [drone_coroutines]
+    ; call start_coroutine
 
-    add ebx, COROUTINE_SIZE
-    call start_coroutine
+    ; add ebx, COROUTINE_SIZE
+    ; call start_coroutine
 
-        add ebx, COROUTINE_SIZE
-    call start_coroutine
+    ;     add ebx, COROUTINE_SIZE
+    ; call start_coroutine
 
-        add ebx, COROUTINE_SIZE
-    call start_coroutine
+    ;     add ebx, COROUTINE_SIZE
+    ; call start_coroutine
 
-        add ebx, COROUTINE_SIZE
-    call start_coroutine
+    ;     add ebx, COROUTINE_SIZE
+    ; call start_coroutine
+
 
     jmp exit
 
 ; starts the coroutine in ebx
 start_co:
+    mov eax, msg2
+    push eax
+    call printf
+    pop eax
+
 	push EBP
 	mov	EBP, ESP
 	pusha
@@ -83,6 +103,27 @@ end_co:
 	popa
 	pop	EBP
 	ret
+
+; TODO: move to a different file
+; TODO: loop over the coroutines for resume (maybe wait until a real drone coroutine is created)
+scheduler_func:
+    xor esi, esi
+    mov ebx, [drone_coroutines]
+    iterate_over_coroutines:
+        cmp esi, dword [drones_count]
+            je iterate_over_coroutines_end
+
+        call resume
+
+        add ebx, COROUTINE_SIZE
+        inc esi
+
+        jmp iterate_over_coroutines
+
+    iterate_over_coroutines_end:
+    
+    jmp end_co
+
 
 init_drone_coroutines:
     push    ebp             ; Save caller state
@@ -120,8 +161,6 @@ init_drone_coroutines:
     init_drone_coroutine_loop:
         cmp ecx, dword [drones_count]
             je init_drone_coroutines_ret
-
-
 
         mov eax, STACK_SIZE
         mul ecx
@@ -236,7 +275,8 @@ stupid_coroutine:
     call printf
     pop eax
 
-    jmp end_co
+    mov ebx, scheduler_coroutine
+    call resume
 
 
 
