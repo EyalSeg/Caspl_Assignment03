@@ -10,23 +10,30 @@ COROUTINE_SIZE equ 12
 x_coordinate equ 8
 y_coordinate equ 16
 angle equ 24
+drone_id equ 28
 
-drone_storage_size equ 24
+drone_storage_size equ 28
 
 
 section .data
     msg db 'hello ', 10, 0
     msg2 db 'DEBUG! ', 10, 0
-    print_decimal db '%d ', 10, 0
+    print_decimal db '%d ', 0
     print_hex db '0x%X ', 10, 0
-    print_float db '%.2f ', 10, 0
+    print_float_format db '%.2f ', 0
+    newline db 10, 0
 
     var1: dd 1.1212
 
-    ; Structure for the scheduler
+; Structure for the scheduler
 scheduler_coroutine:	dd	scheduler_func
 Flags3:	dd	0
 scheduler_sp:	dd	scheduler_stack+STACK_SIZE
+
+; Structure for the board printer
+printer_coroutine: dd print_board
+Flags4: dd 0
+printer_sp: dd printer_stack + STACK_SIZE
 
 section .bss
     align 16
@@ -46,8 +53,6 @@ section .bss
     scheduler_stack resb STACK_SIZE
 
     lfsr resw 1
-
-
 
     
 section .text
@@ -96,11 +101,31 @@ align 16
     add esp, 12 ; discard the pushed values
 %endmacro
 
+; takes a pointer to an 8-byte memory block of a float and prints it
+%macro print_float 1
+    ;mov eax, print_float_format
+    push dword [%1 + 4]
+    push dword [%1]
+    ;push eax
+    push dword print_float_format
+    call printf
+    add esp, 12
+%endmacro
+
+%macro print_newline 0
+    push dword newline
+    call printf
+    add esp, 4
+%endmacro
+
 main:
     mov dword [drones_count], 5 ; TODO : read from cmdline args
     mov word [lfsr], 0xACE1; TODO : read from cmdline args
 
     call init_drone_coroutines
+
+    mov ebx, printer_coroutine
+    call co_init
 
     mov ebx, scheduler_coroutine
     call co_init
@@ -122,11 +147,6 @@ main:
 
 ; starts the coroutine in ebx
 start_co:
-    mov eax, msg2
-    push eax
-    call printf
-    pop eax
-
 	push EBP
 	mov	EBP, ESP
 	pusha
@@ -147,21 +167,50 @@ end_co:
 scheduler_func:
     xor esi, esi
     mov ebx, [drone_coroutines]
-    iterate_over_coroutines:
+    scheduler_iterate_over_coroutines:
         cmp esi, dword [drones_count]
-            je iterate_over_coroutines_end
+            je scheduler_iterate_over_coroutines_end
 
         call resume
 
         add ebx, COROUTINE_SIZE
         inc esi
 
-        jmp iterate_over_coroutines
+        jmp scheduler_iterate_over_coroutines
 
-    iterate_over_coroutines_end:
+    scheduler_iterate_over_coroutines_end:
+
+    mov ebx, printer_coroutine
+    call resume
     
-    jmp scheduler_func
+    ; TODO: loop
+    ;jmp scheduler_func
     jmp end_co
+
+print_board:
+    ; TODO: print the target
+
+    xor esi, esi
+    mov eax, [drone_stacks]
+    printer_iterate:
+        cmp esi, dword [drones_count]
+            je printer_iterate_end
+
+        ; eax points to the stack of some drone
+        push eax
+        call print_drone_from_stack
+        pop eax
+
+        add eax, STACK_SIZE
+        inc esi
+
+        jmp printer_iterate
+
+    printer_iterate_end:
+
+    mov ebx, scheduler_coroutine
+    call resume
+
 
 ; TODO: I suspect that it is bugged
 ; returns the output bit of the lfsr and shifts it once
@@ -249,7 +298,7 @@ init_drone_coroutines:
 
     xor ecx, ecx
     mov ebx, [drone_coroutines]
-
+    
     init_drone_coroutine_loop:
         cmp ecx, dword [drones_count]
             je init_drone_coroutines_ret
@@ -266,6 +315,7 @@ init_drone_coroutines:
         call co_init
 
         inc ecx
+        mov dword [eax - drone_id], ecx ; write drone id
         add ebx, COROUTINE_SIZE
         jmp init_drone_coroutine_loop
 
@@ -307,6 +357,38 @@ emptyfunc:
     pop     ebp             ; Restore caller state
     ret                     ; Back to caller
 
+; takes a pointer to the stack containing the drone and prints the drone
+print_drone_from_stack:
+    push    ebp             ; Save caller state
+    mov     ebp, esp
+    ;sub     esp, 4          ; Leave space for local var on stack
+    pushad   
+
+    mov eax, [ebp + 8]    
+    push dword [eax + STACK_SIZE - drone_id]
+    push dword print_decimal
+    call printf
+    add esp, 8
+
+    mov eax, [ebp + 8]    
+    print_float eax + STACK_SIZE - x_coordinate
+
+    mov eax, [ebp + 8]    
+    print_float eax + STACK_SIZE - y_coordinate
+
+    mov eax, [ebp + 8]    
+    print_float eax + STACK_SIZE - angle
+
+    print_newline
+
+    ;mov     [ebp-4], eax    ; Save returned value...
+    popad                   ; Restore caller state (registers)
+    ;mov     eax, [ebp-4]    ; place returned value where caller can see it
+   ; add     esp, 4          ; Restore caller state
+    pop     ebp             ; Restore caller state
+    ret                     ; Back to caller
+
+
 ;generates a random 16-bit integer
 generate_random_integer:
     push    ebp             ; Save caller state
@@ -329,12 +411,12 @@ generate_random_integer:
     jmp generate_random_integer_loop
     generate_random_integer_loop_end:
 
-    push edi
-    mov ebx, print_decimal
-    push ebx
-    call printf
-    pop ebx
-    pop eax
+    ; push edi
+    ; mov ebx, print_decimal
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
 
     mov     [ebp-4], edi    ; Save returned value...
     popad                   ; Restore caller state (registers)
@@ -399,24 +481,17 @@ exit:
 
 
 drone_coroutine:
-    mov eax, msg
-    push eax
-    call printf
-    pop eax
+    ; mov eax, msg
+    ; push eax
+    ; call printf
+    ; pop eax
 
     ; allocate local memory
     sub esp, drone_storage_size
 
-    ; TODO: convert to float and scale to [0, 100]
+    ; initalize 
     call generate_random_integer
     int_to_scaled_float ebp - x_coordinate, 0, 100
- 
-    mov eax, print_float
-    push dword [ebp - x_coordinate + 4]
-    push dword [ebp - x_coordinate ]
-    push eax
-    call printf
-    add esp, 12
 
     call generate_random_integer
     int_to_scaled_float ebp - y_coordinate, 0, 100
@@ -424,15 +499,13 @@ drone_coroutine:
     call generate_random_integer
     int_to_scaled_float ebp - angle, 0, 360
 
+    ; print_float ebp - x_coordinate
+    ; print_newline
+
     mov ebx, scheduler_coroutine
     call resume
 
     drone_coroutine_update_loop:
-
-    mov eax, msg
-    push eax
-    call printf
-    pop eax
 
     mov ebx, scheduler_coroutine
     call resume
