@@ -54,6 +54,8 @@ section .bss
 
     lfsr resw 1
 
+    target_x resq 1
+    target_y resq 1
     
 section .text
 
@@ -62,6 +64,7 @@ align 16
     global end_co
     global start_coroutine
     global resume
+    global createTarget
 
     extern printf
     extern malloc
@@ -123,6 +126,7 @@ main:
     mov word [lfsr], 0xACE1; TODO : read from cmdline args
 
     call init_drone_coroutines
+    call createTarget
 
     mov ebx, printer_coroutine
     call co_init
@@ -189,6 +193,9 @@ scheduler_func:
 
 print_board:
     ; TODO: print the target
+    print_float target_x
+    print_float target_y
+    print_newline
 
     xor esi, esi
     mov eax, [drone_stacks]
@@ -212,7 +219,6 @@ print_board:
     call resume
 
 
-; TODO: I suspect that it is bugged
 ; returns the output bit of the lfsr and shifts it once
 shift_lfsr:
     push    ebp             ; Save caller state
@@ -252,19 +258,9 @@ shift_lfsr:
     and dx, cx ; turn of dx's msb
 
     shrd ax, ax, 1 ; turn the lsb to msb
-    or dx, ax 
-    ; or ax, 0x7FFF ; turn on every digit, leaving the msb untouched
-    ; and dx, ax ; set dx's msb to be ax's msb
+    or dx, ax  
 
     mov word[lfsr], dx
-
-    push edx
-    mov eax, print_hex
-    push eax
-    call printf
-    pop eax
-    pop edx
-
     ;mov     [ebp-4], eax    ; Save returned value...
     popad                   ; Restore caller state (registers)
     mov     eax, [ebp-4]    ; place returned value where caller can see it
@@ -355,6 +351,27 @@ emptyfunc:
     mov     ebp, esp
     ;sub     esp, 4          ; Leave space for local var on stack
     pushad   
+
+    ;mov     [ebp-4], eax    ; Save returned value...
+    popad                   ; Restore caller state (registers)
+    ;mov     eax, [ebp-4]    ; place returned value where caller can see it
+   ; add     esp, 4          ; Restore caller state
+    pop     ebp             ; Restore caller state
+    ret                     ; Back to caller
+
+createTarget:
+    push    ebp             ; Save caller state
+    mov     ebp, esp
+    ;sub     esp, 4          ; Leave space for local var on stack
+    pushad   
+
+    call generate_random_integer
+    int_to_scaled_float target_x, 0, 100
+
+
+    call generate_random_integer
+    int_to_scaled_float target_y, 0, 100
+
 
     ;mov     [ebp-4], eax    ; Save returned value...
     popad                   ; Restore caller state (registers)
