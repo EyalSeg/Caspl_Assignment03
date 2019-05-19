@@ -7,11 +7,11 @@ FLAGSP	equ	4
 SPP	equ	8
 COROUTINE_SIZE equ 12
 
-x_coordinate equ 4
-y_coordinate equ 8
-angle equ 12
+x_coordinate equ 8
+y_coordinate equ 16
+angle equ 24
 
-drone_storage_size equ 12
+drone_storage_size equ 24
 
 
 section .data
@@ -19,7 +19,7 @@ section .data
     msg2 db 'DEBUG! ', 10, 0
     print_decimal db '%d ', 10, 0
     print_hex db '0x%X ', 10, 0
-    print_float db '%f ', 10, 0
+    print_float db '%.2f ', 10, 0
 
     var1: dd 1.1212
 
@@ -69,6 +69,32 @@ align 16
     pop eax
 %endmacro
 
+; writes a 16-bit integer from eax to memory, after scaling it to [$1, $2]
+; $1 - 8-bytes memory to store the float
+; will put eax scaled down from 16-bit integer to [$2, $3] 
+%macro int_to_scaled_float 3
+    mov dword [%1], eax
+
+    mov eax, 0xFFFF
+    push dword eax
+
+    fild dword [%1]
+    fidiv dword[esp]
+
+    mov eax, %2 + %3
+    push dword eax
+
+    fimul dword[esp]
+
+    mov eax, %2
+    push eax
+
+    fiadd dword[esp]
+
+    fstp qword [%1]
+
+    add esp, 12 ; discard the pushed values
+%endmacro
 
 main:
     mov dword [drones_count], 5 ; TODO : read from cmdline args
@@ -80,74 +106,16 @@ main:
     call co_init
     call start_coroutine
 
-    ; small example of how to read from a drone of another process
-    mov eax, [drone_stacks]
-    mov eax, [eax + STACK_SIZE - y_coordinate]
+    ; ; small example of how to read from a drone of another coroutine
+    ; mov eax, [drone_stacks]
+    ; mov eax, [eax + STACK_SIZE - y_coordinate]
 
-    ;mov eax, dword [eax - y_coordinate]
-
-    push eax
-    mov eax, print_decimal
-    push eax
-    call printf
-    pop eax 
-    pop eax
-
-;    ; fld dword [var1]
-;    mov eax, 100
-;    fild dword eax
-;   ;  fmul dword [var1]
-
-;     sub esp, 8
-;     fstp qword[esp]
-;     push print_float
-;     call printf
-;     add esp, 12
-
-
-    
-    ; mov ecx, 100
-    ; push ecx
-    ; call generate_random_float
-    ; pop ecx
     ; push eax
-    ; push ebx
-    ; call printf
-    ; pop ebx
-    ; pop eax
-
-    ; mov ebx, print_decimal
-    
-    ; call generate_random_integer
+    ; mov eax, print_decimal
     ; push eax
-    ; push ebx
     ; call printf
-    ; pop ebx
+    ; pop eax 
     ; pop eax
-
-
-
-    ;     call generate_random_integer
-    ; push eax
-    ; push ebx
-    ; call printf
-    ; pop ebx
-    ; pop eax
-
-    ;     call generate_random_integer
-    ; push eax
-    ; push ebx
-    ; call printf
-    ; pop ebx
-    ; pop eax
-
-    ;     call generate_random_integer
-    ; push eax
-    ; push ebx
-    ; call printf
-    ; pop ebx
-    ; pop eax
-
     
 
     jmp exit
@@ -192,6 +160,7 @@ scheduler_func:
 
     iterate_over_coroutines_end:
     
+    jmp scheduler_func
     jmp end_co
 
 ; TODO: I suspect that it is bugged
@@ -255,7 +224,6 @@ init_drone_coroutines:
     ;sub     esp, 4          ; Leave space for local var on stack
     pushad   
 
-
     ; init drone structs
     mov eax, [drones_count]
     mov ebx, STACK_SIZE
@@ -301,7 +269,6 @@ init_drone_coroutines:
         add ebx, COROUTINE_SIZE
         jmp init_drone_coroutine_loop
 
-
     init_drone_coroutines_ret:
 
     ;mov     [ebp-4], eax    ; Save returned value...
@@ -340,6 +307,7 @@ emptyfunc:
     pop     ebp             ; Restore caller state
     ret                     ; Back to caller
 
+;generates a random 16-bit integer
 generate_random_integer:
     push    ebp             ; Save caller state
     mov     ebp, esp
@@ -347,7 +315,7 @@ generate_random_integer:
     pushad   
 
     xor edi, edi
-    mov ebx, 31
+    mov ebx, 16
 
     generate_random_integer_loop:
     cmp ebx, 0
@@ -360,6 +328,13 @@ generate_random_integer:
     dec ebx
     jmp generate_random_integer_loop
     generate_random_integer_loop_end:
+
+    push edi
+    mov ebx, print_decimal
+    push ebx
+    call printf
+    pop ebx
+    pop eax
 
     mov     [ebp-4], edi    ; Save returned value...
     popad                   ; Restore caller state (registers)
@@ -434,19 +409,31 @@ drone_coroutine:
 
     ; TODO: convert to float and scale to [0, 100]
     call generate_random_integer
-    mov dword [ebp - x_coordinate], eax
-
-    call generate_random_integer
-    mov dword [ebp - y_coordinate], eax
-
-    call generate_random_integer
-    mov dword [ebp - angle], eax 
-
-    mov ebx, print_decimal
-    push dword [ebp -y_coordinate]
-    push ebx
+    int_to_scaled_float ebp - x_coordinate, 0, 100
+ 
+    mov eax, print_float
+    push dword [ebp - x_coordinate + 4]
+    push dword [ebp - x_coordinate ]
+    push eax
     call printf
-    add esp, 8
+    add esp, 12
+
+    call generate_random_integer
+    int_to_scaled_float ebp - y_coordinate, 0, 100
+
+    call generate_random_integer
+    int_to_scaled_float ebp - angle, 0, 360
 
     mov ebx, scheduler_coroutine
     call resume
+
+    drone_coroutine_update_loop:
+
+    mov eax, msg
+    push eax
+    call printf
+    pop eax
+
+    mov ebx, scheduler_coroutine
+    call resume
+    jmp drone_coroutine_update_loop
