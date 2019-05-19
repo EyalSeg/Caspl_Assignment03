@@ -119,7 +119,7 @@ align 16
 %endmacro
 
 main:
-    mov dword [drones_count], 5 ; TODO : read from cmdline args
+    mov dword [drones_count], 10 ; TODO : read from cmdline args
     mov word [lfsr], 0xACE1; TODO : read from cmdline args
 
     call init_drone_coroutines
@@ -224,6 +224,8 @@ shift_lfsr:
     mov dx, word [lfsr]
     
     xor eax, eax
+    xor ebx, ebx
+
     mov ax, 1
     and ax, dx ; get the first bit
 
@@ -245,19 +247,23 @@ shift_lfsr:
     xor ax, bx 
 
     ; ax now holds the input bit
-    shrd dx, dx, 1
-    shld ax, ax, 15
-    or ax, 0x7FFF
-    and dx, ax
+    shrd dx, dx, 1 ; shift once
+    mov cx, 0x7FFF
+    and dx, cx ; turn of dx's msb
+
+    shrd ax, ax, 1 ; turn the lsb to msb
+    or dx, ax 
+    ; or ax, 0x7FFF ; turn on every digit, leaving the msb untouched
+    ; and dx, ax ; set dx's msb to be ax's msb
 
     mov word[lfsr], dx
 
-    ; push edx
-    ; mov eax, print_hex
-    ; push eax
-    ; call printf
-    ; pop eax
-    ; pop edx
+    push edx
+    mov eax, print_hex
+    push eax
+    call printf
+    pop eax
+    pop edx
 
     ;mov     [ebp-4], eax    ; Save returned value...
     popad                   ; Restore caller state (registers)
