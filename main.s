@@ -7,11 +7,21 @@ FLAGSP	equ	4
 SPP	equ	8
 COROUTINE_SIZE equ 12
 
+x_coordinate equ 4
+y_coordinate equ 8
+angle equ 12
+
+drone_storage_size equ 12
+
 
 section .data
     msg db 'hello ', 10, 0
     msg2 db 'DEBUG! ', 10, 0
     print_decimal db '%d ', 10, 0
+    print_hex db '0x%X ', 10, 0
+    print_float db '%f ', 10, 0
+
+    var1: dd 1.1212
 
     ; Structure for the scheduler
 scheduler_coroutine:	dd	scheduler_func
@@ -35,6 +45,9 @@ section .bss
     printer_stack resb STACK_SIZE
     scheduler_stack resb STACK_SIZE
 
+    lfsr resw 1
+
+
 
     
 section .text
@@ -56,29 +69,86 @@ align 16
     pop eax
 %endmacro
 
+
 main:
     mov dword [drones_count], 5 ; TODO : read from cmdline args
+    mov word [lfsr], 0xACE1; TODO : read from cmdline args
 
     call init_drone_coroutines
 
     mov ebx, scheduler_coroutine
     call co_init
     call start_coroutine
-    ; mov ebx, [drone_coroutines]
-    ; call start_coroutine
 
-    ; add ebx, COROUTINE_SIZE
-    ; call start_coroutine
+    ; small example of how to read from a drone of another process
+    mov eax, [drone_stacks]
+    mov eax, [eax + STACK_SIZE - y_coordinate]
 
-    ;     add ebx, COROUTINE_SIZE
-    ; call start_coroutine
+    ;mov eax, dword [eax - y_coordinate]
 
-    ;     add ebx, COROUTINE_SIZE
-    ; call start_coroutine
+    push eax
+    mov eax, print_decimal
+    push eax
+    call printf
+    pop eax 
+    pop eax
 
-    ;     add ebx, COROUTINE_SIZE
-    ; call start_coroutine
+;    ; fld dword [var1]
+;    mov eax, 100
+;    fild dword eax
+;   ;  fmul dword [var1]
 
+;     sub esp, 8
+;     fstp qword[esp]
+;     push print_float
+;     call printf
+;     add esp, 12
+
+
+    
+    ; mov ecx, 100
+    ; push ecx
+    ; call generate_random_float
+    ; pop ecx
+    ; push eax
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
+
+    ; mov ebx, print_decimal
+    
+    ; call generate_random_integer
+    ; push eax
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
+
+
+
+    ;     call generate_random_integer
+    ; push eax
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
+
+    ;     call generate_random_integer
+    ; push eax
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
+
+    ;     call generate_random_integer
+    ; push eax
+    ; push ebx
+    ; call printf
+    ; pop ebx
+    ; pop eax
+
+    
 
     jmp exit
 
@@ -124,6 +194,60 @@ scheduler_func:
     
     jmp end_co
 
+; TODO: I suspect that it is bugged
+; returns the output bit of the lfsr and shifts it once
+shift_lfsr:
+    push    ebp             ; Save caller state
+    mov     ebp, esp
+    sub     esp, 4          ; Leave space for local var on stack
+    pushad   
+
+    xor edx, edx
+    mov dx, word [lfsr]
+    
+    xor eax, eax
+    mov ax, 1
+    and ax, dx ; get the first bit
+
+    mov [ebp-4], eax    ; Save returned value, the rightmost-bit
+
+    mov bx, 4
+    and bx, dx
+    shrd bx, bx, 2
+    xor ax, bx
+
+    mov bx, 8
+    and bx, dx
+    shrd bx, bx, 3
+    xor ax, bx
+
+    mov bx, 32
+    and bx, dx
+    shrd bx, bx, 5
+    xor ax, bx 
+
+    ; ax now holds the input bit
+    shrd dx, dx, 1
+    shld ax, ax, 15
+    or ax, 0x7FFF
+    and dx, ax
+
+    mov word[lfsr], dx
+
+    ; push edx
+    ; mov eax, print_hex
+    ; push eax
+    ; call printf
+    ; pop eax
+    ; pop edx
+
+    ;mov     [ebp-4], eax    ; Save returned value...
+    popad                   ; Restore caller state (registers)
+    mov     eax, [ebp-4]    ; place returned value where caller can see it
+    add     esp, 4          ; Restore caller state
+    pop     ebp             ; Restore caller state
+    ret                     ; Back to caller
+
 
 init_drone_coroutines:
     push    ebp             ; Save caller state
@@ -167,7 +291,7 @@ init_drone_coroutines:
         add eax, [drone_stacks] ; eax now holds a pointer to the stack for the current coroutine
         add eax, STACK_SIZE ; eax now holds a pointer to the end of said stack
 
-        mov dword [ebx + CODEP], stupid_coroutine ; TODO
+        mov dword [ebx + CODEP], drone_coroutine
         mov dword [ebx + FLAGSP], 0
         mov dword [ebx + SPP], eax 
 
@@ -215,6 +339,35 @@ emptyfunc:
    ; add     esp, 4          ; Restore caller state
     pop     ebp             ; Restore caller state
     ret                     ; Back to caller
+
+generate_random_integer:
+    push    ebp             ; Save caller state
+    mov     ebp, esp
+    sub     esp, 4          ; Leave space for local var on stack
+    pushad   
+
+    xor edi, edi
+    mov ebx, 31
+
+    generate_random_integer_loop:
+    cmp ebx, 0
+        jle generate_random_integer_loop_end
+
+    shld edi, edi, 1
+    call shift_lfsr
+    or edi, eax
+
+    dec ebx
+    jmp generate_random_integer_loop
+    generate_random_integer_loop_end:
+
+    mov     [ebp-4], edi    ; Save returned value...
+    popad                   ; Restore caller state (registers)
+    mov     eax, [ebp-4]    ; place returned value where caller can see it
+    add     esp, 4          ; Restore caller state
+    pop     ebp             ; Restore caller state
+    ret                     ; Back to caller
+
 
 ;  EBX is pointer to co-routine structure to initialize
 co_init:
@@ -269,14 +422,31 @@ exit:
     mov     ebx, 0 ; return value
     int     0x80
 
-stupid_coroutine:
+
+drone_coroutine:
     mov eax, msg
     push eax
     call printf
     pop eax
 
+    ; allocate local memory
+    sub esp, drone_storage_size
+
+    ; TODO: convert to float and scale to [0, 100]
+    call generate_random_integer
+    mov dword [ebp - x_coordinate], eax
+
+    call generate_random_integer
+    mov dword [ebp - y_coordinate], eax
+
+    call generate_random_integer
+    mov dword [ebp - angle], eax 
+
+    mov ebx, print_decimal
+    push dword [ebp -y_coordinate]
+    push ebx
+    call printf
+    add esp, 8
+
     mov ebx, scheduler_coroutine
     call resume
-
-
-
