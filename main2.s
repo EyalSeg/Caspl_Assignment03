@@ -37,7 +37,7 @@ section .bss
 CURR:	resd	1
 SPT:	resd	1
 SPMAIN:	resd	1
-STK1:	resb	STKSZ
+	STK1:	resb	STKSZ
 STK2:	resb	STKSZ
 STK3:	resb	STKSZ
 

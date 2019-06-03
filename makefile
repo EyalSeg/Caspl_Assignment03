@@ -7,7 +7,7 @@ main : main.o
 # 	gcc -m32 -Wall -g scheduler.o -o scheduler
 
 main.o : main.s
-	nasm -f elf main.s -o main.o 
+	nasm -f elf -g main.s -o main.o 
 
 # scheduler.o : scheduler.s
 # 	nasm -f elf scheduler.s -o scheduler.o 
